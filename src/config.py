@@ -10,7 +10,7 @@ class Config:
     IS_KAGGLE = os.path.isdir("/kaggle/input")
     if IS_KAGGLE:
         _CANDIDATES = [
-            "/kaggle/input/understanding_cloud_organization",
+            "/kaggle/input/competitions/understanding_cloud_organization",
             "/kaggle/input/understanding-cloud-organization",
         ]
         DATA_DIR = next((p for p in _CANDIDATES if os.path.isdir(p)), _CANDIDATES[0])
