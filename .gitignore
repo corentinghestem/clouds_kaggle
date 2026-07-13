@@ -1,0 +1,12 @@
+/data/
+/checkpoints/
+*.zip
+/venv/
+.env
+.png
+.DS_Store
+viewer.py
+eda_figures/
+__pycache__/
+segformer_clouds/
+swin_unet_clouds/
