@@ -10,3 +10,11 @@ def rle_decode(mask_rle: str, shape: tuple) -> np.ndarray:
     for lo, hi in zip(starts, ends):
         img[lo:hi] = 1
     return img.reshape(shape, order="F")
+
+
+def rle_encode(mask: np.ndarray) -> str:
+    pixels = mask.flatten(order="F")
+    pixels = np.concatenate([[0], pixels, [0]])
+    runs = np.where(pixels[1:] != pixels[:-1])[0] + 1
+    runs[1::2] -= runs[::2]
+    return " ".join(str(x) for x in runs)
