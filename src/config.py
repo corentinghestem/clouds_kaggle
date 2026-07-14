@@ -22,7 +22,7 @@ class Config:
     TRAIN_CSV = os.path.join(DATA_DIR, "train.csv")
     TRAIN_IMAGES_DIR = os.path.join(DATA_DIR, "train_images")
 
-    BACKBONE_NAME = "microsoft/swin-tiny-patch4-window7-224"
+    BACKBONE_NAME = "microsoft/swin-base-patch4-window7-224-in22k"
     PRETRAINED_BACKBONE = True
 
     CLASSES = ["Fish", "Flower", "Gravel", "Sugar"]
@@ -32,10 +32,10 @@ class Config:
     IMG_HEIGHT = 512
     IMG_WIDTH = 768
 
-    BATCH_SIZE = 4
-    GRAD_ACCUM_STEPS = 2
+    BATCH_SIZE = 2
+    GRAD_ACCUM_STEPS = 4
     NUM_EPOCHS = 35
-    LR = 6e-5
+    LR = 3e-5
     WEIGHT_DECAY = 1e-2
     WARMUP_RATIO = 0.05
     DICE_WEIGHT = 1.0
