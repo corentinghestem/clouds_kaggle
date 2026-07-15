@@ -12,10 +12,11 @@ from src.rle import rle_encode
 from src.transforms import get_transforms
 
 
-def predict_test_set():
-    model = build_model()
-    ckpt_path = os.path.join(Config.OUTPUT_DIR, "best_model.pt")
-    model.load_state_dict(torch.load(ckpt_path, map_location=Config.DEVICE))
+def predict_test_set(model=None):
+    if model is None:
+        model = build_model()
+        ckpt_path = os.path.join(Config.OUTPUT_DIR, "best_model.pt")
+        model.load_state_dict(torch.load(ckpt_path, map_location=Config.DEVICE))
     model.eval()
 
     transform = get_transforms(train=False)

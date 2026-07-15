@@ -11,6 +11,7 @@ from src.config import Config, ID2LABEL
 from src.dataset import CloudDataset
 from src.engine import train_one_epoch, validate
 from src.model import build_model
+from src.predict import predict_test_set
 from src.transforms import get_transforms
 from src.utils import set_seed, stratified_split
 from src.visualize import visualize_prediction
@@ -132,3 +133,5 @@ def main():
         visualize_prediction(
             best_model, sample_image,
             os.path.join(Config.OUTPUT_DIR, "exemple_prediction.png"))
+
+    predict_test_set(best_model)

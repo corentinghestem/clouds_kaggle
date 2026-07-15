@@ -40,7 +40,7 @@ class Config:
     WARMUP_RATIO = 0.05
     DICE_WEIGHT = 1.0
     GRAD_CLIP_NORM = 1.0
-    EARLY_STOP_PATIENCE = 7
+    EARLY_STOP_PATIENCE = 12
     VAL_SPLIT = 0.15
     NUM_WORKERS = 4 if IS_KAGGLE else 2
     SEED = 42
