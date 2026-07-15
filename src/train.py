@@ -2,6 +2,7 @@ import csv
 import math
 import os
 
+import mlflow
 import pandas as pd
 import torch
 from torch.utils.data import DataLoader
@@ -23,6 +24,9 @@ def main():
         torch.cuda.empty_cache()
     os.makedirs(Config.OUTPUT_DIR, exist_ok=True)
     print(f"Device : {Config.DEVICE} | Kaggle : {Config.IS_KAGGLE}")
+
+    mlflow.set_tracking_uri(Config.MLFLOW_TRACKING_URI)
+    mlflow.set_experiment(Config.MLFLOW_EXPERIMENT_NAME)
 
     df = pd.read_csv(Config.TRAIN_CSV)
     df[["image", "label"]] = df["Image_Label"].str.rsplit("_", n=1, expand=True)
@@ -65,6 +69,7 @@ def main():
     start_epoch = 1
     best_miou = 0.0
     epochs_no_improve = 0
+    run_id = None
     if Config.RESUME and os.path.exists(ckpt_path):
         ckpt = torch.load(ckpt_path, map_location=Config.DEVICE)
         model.load_state_dict(ckpt["model"])
@@ -74,64 +79,98 @@ def main():
         start_epoch = ckpt["epoch"] + 1
         best_miou = ckpt["best_miou"]
         epochs_no_improve = ckpt["epochs_no_improve"]
+        run_id = ckpt.get("mlflow_run_id")
         print(f"Reprise depuis l'époque {start_epoch} (meilleure mIoU = {best_miou:.4f})")
 
     log_path = os.path.join(Config.OUTPUT_DIR, "training_log.csv")
     write_header = not os.path.exists(log_path)
 
-    for epoch in range(start_epoch, Config.NUM_EPOCHS + 1):
-        print(f"\nÉpoque {epoch}/{Config.NUM_EPOCHS}")
-        train_loss = train_one_epoch(model, train_loader, optimizer, scheduler,
-                                     scaler, Config.DEVICE, Config.GRAD_ACCUM_STEPS)
-        val_loss, metric = validate(model, val_loader, Config.DEVICE,
-                                    Config.NUM_CLASSES)
-        miou = metric.mean_iou()
+    with mlflow.start_run(run_id=run_id) as run:
+        if run_id is None:
+            mlflow.log_params({
+                "backbone": Config.BACKBONE_NAME,
+                "img_height": Config.IMG_HEIGHT,
+                "img_width": Config.IMG_WIDTH,
+                "batch_size": Config.BATCH_SIZE,
+                "grad_accum_steps": Config.GRAD_ACCUM_STEPS,
+                "effective_batch_size": Config.BATCH_SIZE * Config.GRAD_ACCUM_STEPS,
+                "num_epochs": Config.NUM_EPOCHS,
+                "lr": Config.LR,
+                "weight_decay": Config.WEIGHT_DECAY,
+                "warmup_ratio": Config.WARMUP_RATIO,
+                "dice_weight": Config.DICE_WEIGHT,
+                "grad_clip_norm": Config.GRAD_CLIP_NORM,
+                "early_stop_patience": Config.EARLY_STOP_PATIENCE,
+                "val_split": Config.VAL_SPLIT,
+                "seed": Config.SEED,
+            })
 
-        print(f"  train_loss = {train_loss:.4f} | val_loss = {val_loss:.4f} "
-              f"| mIoU = {miou:.4f}")
-        for name, iou in zip(ID2LABEL.values(), metric.iou_per_class()):
-            print(f"     IoU {name:<11}: {iou:.4f}")
+        for epoch in range(start_epoch, Config.NUM_EPOCHS + 1):
+            print(f"\nÉpoque {epoch}/{Config.NUM_EPOCHS}")
+            train_loss = train_one_epoch(model, train_loader, optimizer, scheduler,
+                                         scaler, Config.DEVICE, Config.GRAD_ACCUM_STEPS)
+            val_loss, metric = validate(model, val_loader, Config.DEVICE,
+                                        Config.NUM_CLASSES)
+            miou = metric.mean_iou()
 
-        with open(log_path, "a", newline="") as f:
-            writer = csv.writer(f)
-            if write_header:
-                writer.writerow(["epoch", "train_loss", "val_loss", "mIoU"]
-                                + [f"IoU_{n}" for n in ID2LABEL.values()])
-                write_header = False
-            writer.writerow([epoch, train_loss, val_loss, miou]
-                            + list(metric.iou_per_class()))
+            print(f"  train_loss = {train_loss:.4f} | val_loss = {val_loss:.4f} "
+                  f"| mIoU = {miou:.4f}")
+            for name, iou in zip(ID2LABEL.values(), metric.iou_per_class()):
+                print(f"     IoU {name:<11}: {iou:.4f}")
 
-        if miou > best_miou:
-            best_miou = miou
-            epochs_no_improve = 0
-            torch.save(model.state_dict(), best_model_path)
-            print(f"  -> Meilleur modèle sauvegardé (mIoU = {best_miou:.4f})")
-        else:
-            epochs_no_improve += 1
+            with open(log_path, "a", newline="") as f:
+                writer = csv.writer(f)
+                if write_header:
+                    writer.writerow(["epoch", "train_loss", "val_loss", "mIoU"]
+                                    + [f"IoU_{n}" for n in ID2LABEL.values()])
+                    write_header = False
+                writer.writerow([epoch, train_loss, val_loss, miou]
+                                + list(metric.iou_per_class()))
 
-        torch.save({
-            "epoch": epoch,
-            "model": model.state_dict(),
-            "optimizer": optimizer.state_dict(),
-            "scheduler": scheduler.state_dict(),
-            "scaler": scaler.state_dict(),
-            "best_miou": best_miou,
-            "epochs_no_improve": epochs_no_improve,
-        }, ckpt_path)
+            mlflow.log_metrics({
+                "train_loss": train_loss,
+                "val_loss": val_loss,
+                "mIoU": miou,
+                **{f"iou_{name}": iou for name, iou in zip(ID2LABEL.values(), metric.iou_per_class())},
+            }, step=epoch)
 
-        if epochs_no_improve >= Config.EARLY_STOP_PATIENCE:
-            print(f"\nArrêt anticipé : pas d'amélioration depuis "
-                  f"{Config.EARLY_STOP_PATIENCE} époques.")
-            break
+            if miou > best_miou:
+                best_miou = miou
+                epochs_no_improve = 0
+                torch.save(model.state_dict(), best_model_path)
+                print(f"  -> Meilleur modèle sauvegardé (mIoU = {best_miou:.4f})")
+            else:
+                epochs_no_improve += 1
 
-    print(f"\nEntraînement terminé. Meilleure mIoU : {best_miou:.4f}")
+            torch.save({
+                "epoch": epoch,
+                "model": model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "scheduler": scheduler.state_dict(),
+                "scaler": scaler.state_dict(),
+                "best_miou": best_miou,
+                "epochs_no_improve": epochs_no_improve,
+                "mlflow_run_id": run.info.run_id,
+            }, ckpt_path)
 
-    best_model = build_model()
-    best_model.load_state_dict(torch.load(best_model_path, map_location=Config.DEVICE))
-    sample_image = os.path.join(Config.TRAIN_IMAGES_DIR, val_df.iloc[0]["image"])
-    if os.path.exists(sample_image):
-        visualize_prediction(
-            best_model, sample_image,
-            os.path.join(Config.OUTPUT_DIR, "exemple_prediction.png"))
+            if epochs_no_improve >= Config.EARLY_STOP_PATIENCE:
+                print(f"\nArrêt anticipé : pas d'amélioration depuis "
+                      f"{Config.EARLY_STOP_PATIENCE} époques.")
+                break
 
-    predict_test_set(best_model)
+        print(f"\nEntraînement terminé. Meilleure mIoU : {best_miou:.4f}")
+        mlflow.log_metric("best_mIoU", best_miou)
+
+        best_model = build_model()
+        best_model.load_state_dict(torch.load(best_model_path, map_location=Config.DEVICE))
+        sample_image = os.path.join(Config.TRAIN_IMAGES_DIR, val_df.iloc[0]["image"])
+        viz_path = os.path.join(Config.OUTPUT_DIR, "exemple_prediction.png")
+        if os.path.exists(sample_image):
+            visualize_prediction(best_model, sample_image, viz_path)
+            mlflow.log_artifact(viz_path)
+
+        predict_test_set(best_model)
+
+        mlflow.log_artifact(best_model_path)
+        mlflow.log_artifact(log_path)
+        mlflow.log_artifact(os.path.join(Config.OUTPUT_DIR, "submission.csv"))

@@ -22,6 +22,9 @@ class Config:
     TRAIN_CSV = os.path.join(DATA_DIR, "train.csv")
     TRAIN_IMAGES_DIR = os.path.join(DATA_DIR, "train_images")
 
+    MLFLOW_TRACKING_URI = os.path.join(OUTPUT_DIR, "mlruns")
+    MLFLOW_EXPERIMENT_NAME = "swin-unet-clouds"
+
     BACKBONE_NAME = "microsoft/swin-base-patch4-window7-224-in22k"
     PRETRAINED_BACKBONE = True
 
